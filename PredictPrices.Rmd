@@ -1,0 +1,388 @@
+---
+title: "Prediction of House Prices"
+output: pdf_document
+---
+
+**Introduction**
+
+###### The data set housePrice is provided to develop a model to predict the sellng price of a house based on several features.The data set consist of data collected from 5575 sold houses and 12 variables.
+
+1. soldPrice - sold price of house
+2. sqftLiving - square footage of living area
+3. sqftLand - square footage of land
+4. sqftAbove - square footage of area above ground
+5. sqftBasement - square footage of basement
+6. numBedRooms - number of bed rooms
+7. numBathRooms - number of bath rooms
+8. numFloors - number of foors
+9. builtYear - year of construction
+10. grade - construction quality ranked from 1 to 4 where 1 is the lowest grade
+11. waterFront- whether the house has a waterfront (1) or not (0)
+12. condition - condition of the house (Excellent, Good, Average)
+
+
+
+```{r,echo=FALSE}
+housePrice = read.csv("housePrice.csv")
+str(housePrice)
+
+```
+
+
+### Libraries used for this project
+
+```{r,Echo=FALSE, message=FALSE, warning=FALSE}
+library(corrplot)
+library(car)
+library(broom) 
+library(dplyr) 
+library(caTools)
+library(ggplot2)
+library(plotly)
+library(MLmetrics)
+```
+
+## **Exploratory Data Analysis**
+
+**Dataset**
+
+```{r,echo=FALSE}
+
+head(housePrice)
+
+```
+
+
+
+**Checking for any missing values**
+
+```{r}
+sum(is.na(housePrice))
+```
+There are no missing values
+
+
+
+
+**Condition column has to be changed into an ordinal categorical variable**
+```{r}
+
+housePrice$condition[housePrice$condition=='average']<-1
+housePrice$condition[housePrice$condition=='good']<-2
+housePrice$condition[housePrice$condition=='excellent']<-3
+housePrice$condition = as.integer(housePrice$condition)
+
+```
+
+**Summary of the Dataset**
+```{r,echo=FALSE}
+summary(housePrice)
+```
+
+
+
+
+
+**checking for any collinearity of explanatory variables**
+
+```{r,fig.width = 7 , fig.height=7,echo=FALSE}
+corrplot(cor(housePrice[,1:12]),method = "number",bg = "black")
+round(cor(housePrice[,1:12]),2)
+
+```
+There is a very high correlation between sqftLiving and sqftAbove and between sqftLiving and numBathRooms.
+Hence including sqftAbove and numBathrooms along with sqftLiving in the model is not ideal due to collinearity.
+
+
+
+
+
+**Pairwise comparisons of the variables**
+
+```{r ,fig.height=9, fig.width=9,echo=FALSE}
+pairs(housePrice[,1:5])
+pairs(housePrice[,c(1,6,7,8,9,10,11)])
+```
+
+
+
+**Feature engineering**
+
+**Removing the predictor sqftAbove from the dataframe**
+```{r}
+housePrice <- subset(housePrice, select = -c(sqftAbove) )
+
+```
+Here we decided to drop sqftAbove since it has a high correlation with sqftLiving and we cannot remove sqftLiving because it's has a high correlation with response sold price.
+
+
+
+
+
+**Creating a new interaction term**
+
+```{r}
+housePrice["interaction"] = (housePrice$sqftLiving*housePrice$numBathRooms)
+housePrice <- subset(housePrice, select = -c(sqftLiving,numBathRooms))
+```
+We created a new interaction term combining sqftLiving and numBathRooms to eliminate collinearity and also maintain the reliability of the model
+
+
+
+
+
+**Checking for collinearity after adjustments**
+
+```{r,echo=FALSE}
+round(cor(housePrice[,1:10]),2)
+
+```
+**VIF values after feature engineering**
+```{r,echo=FALSE}
+vif(lm(soldPrice~., data = housePrice))
+```
+
+
+By introducing the interaction term we have reduced the correlation between predictors and further we  have the interaction term with the highest correlation with the response soldPrice.
+And also the vif values suggests that collinearity is very low(1<vif<5)
+
+\newpage
+
+## **Model Fitting**
+
+**Train test split**
+
+We split our data set into training and testing parts, training set contain 70% of observations and 10 variables.
+Following are the variables that we start with
+
+1. soldPrice - sold price of house.(Response Variable)
+
+2. sqftLand - square footage of land
+
+3. sqftBasement - square footage of basement
+
+4. numBedRooms - number of bed rooms
+
+5. numFloors - number of floors
+
+6. builtYear - year of construction
+
+7. grade - construction quality ranked from 1 to 4 where 1 is the lowest grade
+
+8. waterFront- whether the house has a waterfront (1) or not (0)
+
+9. condition - condition of the house (3=Excellent, 2=Good, 1=Average)
+
+10. interaction - interaction variable made using sqftLiving and numBathRooms
+
+
+
+```{r, echo=FALSE}
+set.seed(25)
+split <- sample.split(housePrice,SplitRatio =0.7)
+train <- subset(housePrice,split==TRUE)
+test <- subset(housePrice,split==FALSE)
+```
+
+
+
+
+**Forward selection using AIC value(Feature Selection)**
+```{r, echo=FALSE}
+full.model <- lm(soldPrice ~ ., data=train)
+fitOne <- lm(soldPrice ~ 1, data=train)
+step(fitOne, direction= 'forward', scope = formula(full.model))
+
+
+
+```
+When comparing models fitted by maximum likelihood to the same data, the smaller the AIC, the better the fit. SO the final model suggested here contains the most relevant predictor variables with respect to the response.And according to that the model contain all variables except sqftBasement and sqftLAnd.
+
+
+
+
+
+## **Evaluating and validation of the Final Model **
+
+
+**Summary of the final model for the trained data set**
+```{r, echo= FALSE}
+
+
+final.model <-  lm(formula = soldPrice ~ interaction + builtYear + grade + numBedRooms +
+waterFront + numFloors + condition , data = train)
+summary(final.model)
+
+```
+This is the summary of the final model for the trained data set \
+
+**multiple  R squared value:** 0.6107 suggest that 61.07% of variability of sold prices of the houses are explained by the model.\
+**F-Statistic:** 872.7(high f value suggest the strength of the model)\
+
+
+
+
+
+**Let us carry out a Partial F-Test to see whether the reduced model is adequate**
+
+let the reduced model be the final.model\
+and full model be: 
+
+**soldPrice ~ interaction + builtYear + grade + waterFront + numBedRooms + numFloors + condition + sqftBasement +sqftLand**
+
+H(Null):Reduced model is adequate\
+H(Alternative):Reduced model is not adequate
+
+**Summary of the full model**
+```{r,echo=FALSE}
+full.model<-lm(formula =soldPrice ~ interaction + builtYear + grade + waterFront + numBedRooms + numFloors + condition + sqftBasement +sqftLand,data = train )
+summary(full.model)
+
+
+```
+
+**Anova table**
+```{r, echo=FALSE}
+anova(final.model,full.model)
+
+```
+
+When we look at the summary of the full model we can clearly see sqftBasement and sqftLand are not significant and also the adjusted R squared of reduced model is slightly greater than that of full model, further the partial F-Test suggest that the null hypothesis cannot be rejected(p=0.9927) and thus the reduced model is adequate.
+
+
+
+
+
+
+
+
+**Correlation matrix for the final model**
+```{r,echo=FALSE}
+final.housePrice<-subset(housePrice, select = -c(sqftBasement,sqftLand) )
+round(cor(final.housePrice[,1:8]),2)
+
+```
+
+And the correlation matrix suggest that the previously faced issues of multicollinearity is solved and the final model is fit for use.
+
+
+
+
+```{r}
+
+predicted<-predict(final.model,test)
+R2_Score(predicted,test$soldPrice)
+
+
+
+```
+
+R squared value for the test data set is 0.6159655 that is 61.59% of variability of sold prices of the houses are explained by the model when data are not obtained from the trained data set.
+
+
+
+
+\newpage
+
+
+
+**Evaluation of the test set**
+
+```{r,echo=FALSE}
+
+
+
+plot1 <-test %>% 
+  ggplot(aes(soldPrice,predicted)) +
+  geom_point(alpha=0.5) + 
+  stat_smooth(aes(colour='black')) +
+  xlab('Actual value of soldPrice') +
+  ylab('Predicted value of soldePice')+
+  theme_bw()
+##ggplotly(plot1)
+##since plot1 is an interactive image it cannot be converted to pdf so an image of the output is attached
+
+
+```
+
+![Obseved vs Fitted values(interactive image).](plotly.png)
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(printr)
+model.diag.metrices<-augment(final.model)
+model.diag.metrices<- select(model.diag.metrices,soldPrice,.fitted,.resid,.std.resid,.hat,.sigma,.cooksd)
+head(model.diag.metrices)
+
+```
+Gives an idea on the fitted, residuals and some other information when we plot observed data to the final model.
+
+\newpage
+
+
+**Residual Analysis**
+
+
+**Diagnostic plots**
+
+```{r,fig.height=9, fig.width=9, echo= FALSE}
+par(mfrow = c(2,2))
+plot(final.model)
+
+```
+
+1.**Residual vs Fitted plot:** No distinct pattern can be seen and the red line being horizontal indicates that we can assume there is a linear relationship between predictors and response variables
+
+2.**Normal Q-Q plot:**According to the plot, majority of  the points fall approximately along the reference line eventhough there is a slight deviation at the end points so we can assume normality. 
+
+3.**Scale-Location plot:**The plot shows that the variances of the residual points increases with the value of the fitted outcome suggesting non constant variance in the residuals(heteroscedasticity).
+
+4.**Residual vs Leverage plot:** In this plot there are no points outside of the dashed line(Threshold value) which say that there are no influential points,hence all the points are included in the fitted model.
+
+
+\newpage
+
+## **Discussion and Conclusion**
+
+
+A multiple linear regression model was fitted to predict house prices in relation to 11 predictor variables mentioned above. The final model includes all the necessary predictor variables that significantly impact the house prices. 
+
+Feature selection was done based on the AIC values so that the best features are added to the model.
+
+And according to that the model we came up with was(Parsimonious model );
+```{r, echo=FALSE}
+coef(final.model)
+```
+soldPrice = 5719439.59947 + (64.81121)interaction - (2905.78340)builtYear+ (142860.3405)grade - (42973.15673)numBedRooms + (322748.23289)waterFront + (41518.1864)numFloors + (17956.15179)condition
+
+The final model suggest that 61.59% of variability of sold prices of the houses are explained by the model and further high F values tells us the strength of the model
+ 
+There were several key adjustments made such that the final model will give us reliable outputs like, handling the issue of multicollinearity by removing certain predictor variables(sqftAbove) and adding an interaction term so that we reduce VIF values a measure of multicollinearity.
+
+
+Validation of the fitted model was done by
+
+1.Looking at the correlations of the final model
+
+2.Checking for validation of linear regression assumptions(Residual Analysis)  
+
+3.A partial F-test was carried out
+
+4.Used the test data set to see the strength and linear relationship of variables how fitted and observed values lie.
+
+
+The model predicts the house prices with a R2 score of 61.59%  which is an average model this can be improved using feature extraction, rebuilding and training the model. The residual plots like Normal QQ and scale location plots were not satisfactory these can be adjusted through transformation of variables for eg:getting the log values of response variable.
+
+further without using linear models; models like polynomial regression or lasso regression can be used appropriately.
+
+
+
+
+
+
+
+
+
+
